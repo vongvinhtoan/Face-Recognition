@@ -22,6 +22,14 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.example.facenet.ml.Facenet512;
+
+import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -90,7 +98,44 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private float[] imageToFeatVector(Bitmap image) {
-        return new float[3];
+        image = stripImage(image);
+        float[] res = null;
+        try {
+            Facenet512 model = Facenet512.newInstance(this);
+
+            ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * imageSize * imageSize * 3);
+            byteBuffer.order(ByteOrder.nativeOrder());
+
+            int[] intValues = new int[imageSize * imageSize];
+            image.getPixels(intValues, 0, image.getWidth(), 0, 0, image.getWidth(), image.getHeight());
+
+            int id = 0;
+            for(int i=0; i<imageSize; i++) {
+                for(int j=0; j<imageSize; j++) {
+                    int val = intValues[id++];
+                    float normalizer = 1.f / 255.f;
+                    byteBuffer.putFloat(((val >> 16) & 0xFF) * normalizer);
+                    byteBuffer.putFloat(((val >> 8) & 0xFF) * normalizer);
+                    byteBuffer.putFloat(((val) & 0xFF) * normalizer);
+                }
+            }
+
+            // Creates inputs for reference.
+            TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, 160, 160, 3}, DataType.FLOAT32);
+            inputFeature0.loadBuffer(byteBuffer);
+
+            // Runs model inference and gets result.
+            Facenet512.Outputs outputs = model.process(inputFeature0);
+            TensorBuffer outputFeature0 = outputs.getOutputFeature0AsTensorBuffer();
+
+            res = outputFeature0.getFloatArray();
+
+            // Releases model resources if no longer used.
+            model.close();
+        } catch (IOException e) {
+            // TODO Handle the exception
+        }
+        return res;
     }
 
     @Override
@@ -120,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
         confidences.sort(new Comparator<ConfidenceItem>() {
             @Override
             public int compare(ConfidenceItem o1, ConfidenceItem o2) {
-                float delta = o2.getDist() - o1.getDist();
+                float delta = o1.getDist() - o2.getDist();
                 if(delta > 0) return 1;
                 if(delta < 0) return -1;
                 return 0;

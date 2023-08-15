@@ -21,6 +21,10 @@ public class ConfidenceItem {
         return dist;
     }
 
+    public float getCos() {
+        return (float) Math.acos(1 - dist/2);
+    }
+
     public void setDist(float dist) {
         this.dist = dist;
     }
