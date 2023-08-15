@@ -8,12 +8,16 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
 import android.media.ThumbnailUtils;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -22,14 +26,23 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.example.facenet.ml.Facenet512;
+import com.google.gson.Gson;
+
+import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
+import android.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-
-
     private static final int REQUEST_TAKE_PIC = 1;
     private static final int REQUEST_CAMERA_FEATURE = 2;
     TextView result;
@@ -38,20 +51,24 @@ public class MainActivity extends AppCompatActivity {
     Button takePicture, addPerson;
     EditText nameInput;
     int imageSize = 160;
-    HashMap<String, float[]> featVectors;
     ConfidenceAdapter confidenceAdapter;
+    Database database;
+    boolean took_picture;
+    ClassifiedItem classifiedItem = null;
+    private float acceptedPercent = .8f;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        took_picture = false;
+
         result = findViewById(R.id.result);
         confidence = findViewById(R.id.confidence);
         imageView = findViewById(R.id.imageView);
         takePicture = findViewById(R.id.button_take_picture);
         addPerson = findViewById(R.id.button_add_person);
-        featVectors = new HashMap<>();
 
         LinearLayoutManager layoutManager= new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false);
         confidence.setLayoutManager(layoutManager);
@@ -73,13 +90,28 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+
+        addPerson.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(took_picture == false) return;
+                Intent intent = new Intent(MainActivity.this, AddDataActivity.class);
+                Gson gson = new Gson();
+                Bitmap bitmap = ((BitmapDrawable) imageView.getDrawable()).getBitmap();
+                ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+                byte[] bytes = byteArrayOutputStream.toByteArray();
+                intent.putExtra("image", bytes);
+                intent.putExtra("class_name", confidenceAdapter.getItems().get(0).getClass_name());
+                intent.putExtra("feat", classifiedItem.feat);
+                startActivity(intent);
+            }
+        });
     }
 
     private void initData() {
-        featVectors.put("Nghiêm", imageToFeatVector(BitmapFactory.decodeResource(getResources(), R.drawable.nghiem_image)));
-        featVectors.put("Phúc", imageToFeatVector(BitmapFactory.decodeResource(getResources(), R.drawable.phuc_image)));
-        featVectors.put("Toàn", imageToFeatVector(BitmapFactory.decodeResource(getResources(), R.drawable.toan_image)));
-        featVectors.put("Diệp Mai", imageToFeatVector(BitmapFactory.decodeResource(getResources(), R.drawable.mai_image)));
+        database = Database.getInstance();
+        database.init(this);
     }
 
     private Bitmap stripImage(Bitmap image) {
@@ -89,8 +121,49 @@ public class MainActivity extends AppCompatActivity {
         return image;
     }
 
-    private float[] imageToFeatVector(Bitmap image) {
-        return new float[3];
+    public float[] imageToFeatVector(Bitmap image) {
+        image = stripImage(image);
+        float[] res = null;
+        try {
+            Facenet512 model = Facenet512.newInstance(this);
+
+            ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * imageSize * imageSize * 3);
+            byteBuffer.order(ByteOrder.nativeOrder());
+
+            int[] intValues = new int[imageSize * imageSize];
+            image.getPixels(intValues, 0, image.getWidth(), 0, 0, image.getWidth(), image.getHeight());
+
+            int id = 0;
+            for(int i=0; i<imageSize; i++) {
+                for(int j=0; j<imageSize; j++) {
+                    int val = intValues[id++];
+                    float normalizer = 1.f / 255.f;
+                    byteBuffer.putFloat(((val >> 16) & 0xFF) * normalizer);
+                    byteBuffer.putFloat(((val >> 8) & 0xFF) * normalizer);
+                    byteBuffer.putFloat(((val) & 0xFF) * normalizer);
+                }
+            }
+
+            // Creates inputs for reference.
+            TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, 160, 160, 3}, DataType.FLOAT32);
+            inputFeature0.loadBuffer(byteBuffer);
+
+            // Runs model inference and gets result.
+            Facenet512.Outputs outputs = model.process(inputFeature0);
+            TensorBuffer outputFeature0 = outputs.getOutputFeature0AsTensorBuffer();
+
+            res = outputFeature0.getFloatArray();
+            float nor = 0;
+            for(float x : res) nor += x*x;
+            nor = (float) Math.pow(nor, 0.5f);
+            for(int i=0; i<res.length; i++) res[i] /= nor;
+
+            // Releases model resources if no longer used.
+            model.close();
+        } catch (IOException e) {
+            // TODO Handle the exception
+        }
+        return res;
     }
 
     @Override
@@ -98,14 +171,23 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if(resultCode == RESULT_OK) {
             if(requestCode == REQUEST_TAKE_PIC) {
+                took_picture = true;
                 Bitmap image = (Bitmap) data.getExtras().get("data");
                 image = stripImage(image);
                 imageView.setImageBitmap(image);
 
-                ClassifiedItem item = classify(image);
+                classifiedItem = classify(image);
 
-                result.setText(item.getClassName());
-                confidenceAdapter.setList(item.getConfidences());
+                float conf = classifiedItem.getConfidences().get(0).getDist();
+                result.setTextColor(Color.parseColor("#C30000"));
+                String class_name = classifiedItem.getClassName();
+                if(conf < acceptedPercent) {
+                    result.setTextColor(Color.parseColor("#000000"));
+                    class_name = "Stranger";
+                }
+
+                result.setText(class_name);
+                confidenceAdapter.setList(classifiedItem.getConfidences());
                 confidenceAdapter.notifyDataSetChanged();
             }
         }
@@ -114,8 +196,9 @@ public class MainActivity extends AppCompatActivity {
     private ClassifiedItem classify(Bitmap image) {
         float[] feat = imageToFeatVector(image);
         List<ConfidenceItem> confidences = new ArrayList<>();
+        Database.ImageHashMap featVectors = database.getFeatVectors();
         for (String class_name : featVectors.keySet()) {
-            confidences.add(new ConfidenceItem(class_name, L2Dist(feat, featVectors.get(class_name))));
+            confidences.add(new ConfidenceItem(class_name, dot(feat, featVectors.get(class_name))));
         }
         confidences.sort(new Comparator<ConfidenceItem>() {
             @Override
@@ -127,7 +210,13 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         Log.i(TAG, "classify: " + String.valueOf(confidences.size()));
-        return new ClassifiedItem(confidences.get(0).getClass_name(), confidences);
+        return new ClassifiedItem(confidences.get(0).getClass_name(), confidences, feat);
+    }
+
+    private float dot(float[] a, float[] b) {
+        float res = 0;
+        for (int i=0; i<a.length; i++) res += a[i] * b[i];
+        return res;
     }
 
     private float L2Dist(float[] a, float[] b) {
@@ -141,5 +230,19 @@ public class MainActivity extends AppCompatActivity {
         for (int i=0; i<a.length; i++) res += Math.pow(a[i]/a_nor - b[i]/b_nor, 2);
         res = (float) Math.pow(res, 0.5);
         return res;
+    }
+
+    @Override
+    protected void onStop() {
+        database.saveData();
+        Log.i(TAG, "onStop: called AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaa");
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        database.saveData();
+        Log.i(TAG, "onDestroy: called AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaa");
+        super.onDestroy();
     }
 }

@@ -49,7 +49,7 @@ public class ConfidenceAdapter extends RecyclerView.Adapter<ConfidenceHolder> {
     public void onBindViewHolder(@NonNull ConfidenceHolder holder, int position) {
         ConfidenceItem item = items.get(position);
         holder.class_name.setText(item.getClass_name());
-        float progress = item.getCos();
+        float progress = item.getDist();
         holder.indicator.setText(String.format("%.1f%%", progress * 100));
 
         float[] color = pal(progress);
@@ -72,5 +72,9 @@ public class ConfidenceAdapter extends RecyclerView.Adapter<ConfidenceHolder> {
 
     public void setList(List<ConfidenceItem> confidences) {
         items = confidences;
+    }
+
+    public List<ConfidenceItem> getItems() {
+        return items;
     }
 }

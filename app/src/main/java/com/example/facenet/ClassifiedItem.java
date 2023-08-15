@@ -5,10 +5,12 @@ import java.util.List;
 public class ClassifiedItem {
     private String className;
     private List<ConfidenceItem> confidences;
+    float[] feat;
 
-    public ClassifiedItem(String className, List<ConfidenceItem> confidences) {
+    public ClassifiedItem(String className, List<ConfidenceItem> confidences, float[] feat) {
         this.className = className;
         this.confidences = confidences;
+        this.feat = feat;
     }
 
     public String getClassName() {

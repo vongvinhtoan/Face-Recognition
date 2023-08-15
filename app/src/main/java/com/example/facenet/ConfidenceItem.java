@@ -7,13 +7,17 @@ public class ConfidenceItem {
     private String class_name;
     private float dist;
 
+    static float PI = (float) Math.acos(-1);
+
     public ConfidenceItem(String class_name, float dist) {
+        dist += 1;
+        dist /= 2;
         this.class_name = class_name;
         this.dist = dist;
     }
 
     public float getCos() {
-        return (float) ((float) Math.acos(1 - dist / 2) / Math.acos(-1));
+        return 1 - (float) ((float) Math.acos(1 - dist / 2) / Math.acos(-1));
     }
 
     public String getClass_name() {
