@@ -102,8 +102,9 @@ public class MainActivity extends AppCompatActivity {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
                 byte[] bytes = byteArrayOutputStream.toByteArray();
                 intent.putExtra("image", bytes);
-                intent.putExtra("class_name", confidenceAdapter.getItems().get(0).getClass_name());
+                intent.putExtra("class_name", result.getText().toString());
                 intent.putExtra("feat", classifiedItem.feat);
+                intent.putExtra("isStranger", classifiedItem.getConfidences().get(0).getDist() < acceptedPercent);
                 startActivity(intent);
             }
         });
@@ -114,15 +115,15 @@ public class MainActivity extends AppCompatActivity {
         database.init(this);
     }
 
-    private Bitmap stripImage(Bitmap image) {
+    private Bitmap stripImage(Bitmap image, int imageSize) {
         int dimension = Math.min(image.getWidth(), image.getHeight());
         image = ThumbnailUtils.extractThumbnail(image, dimension, dimension);
-        image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
+        if(imageSize > 0) image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
         return image;
     }
 
     public float[] imageToFeatVector(Bitmap image) {
-        image = stripImage(image);
+        image = stripImage(image, imageSize);
         float[] res = null;
         try {
             Facenet512 model = Facenet512.newInstance(this);
@@ -173,7 +174,7 @@ public class MainActivity extends AppCompatActivity {
             if(requestCode == REQUEST_TAKE_PIC) {
                 took_picture = true;
                 Bitmap image = (Bitmap) data.getExtras().get("data");
-                image = stripImage(image);
+                image = stripImage(image, -1);
                 imageView.setImageBitmap(image);
 
                 classifiedItem = classify(image);

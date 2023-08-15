@@ -33,6 +33,7 @@ public class ConfidenceAdapter extends RecyclerView.Adapter<ConfidenceHolder> {
     }
 
     private float[] pal(float t) {
+        t = (float) ((3*t*t - 2*t*t*t) * Math.pow(t, 0.5));
         float[] a = {0.500F, 0.500F, 0.000F};
         float[] b = {0.138F, 0.268F, 0.000F};
         float[] c = {0.500F, 0.500F, 0.000F};

@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
@@ -54,6 +55,9 @@ public class AddDataActivity extends AppCompatActivity {
 
         imageView.setImageBitmap(BitmapFactory.decodeByteArray(bytes, 0, bytes.length));
         result.setText(class_name);
+        boolean isStranger = intent.getExtras().getBoolean("isStranger");
+        if(isStranger)
+            result.setTextColor(Color.parseColor("#000000"));
 
         back.setOnClickListener(new View.OnClickListener() {
             @Override
